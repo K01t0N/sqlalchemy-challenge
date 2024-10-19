@@ -1,8 +1,6 @@
 # Import the dependencies.
-import numpy as np
 import datetime as dt
 
-import sqlalchemy
 from sqlalchemy.ext.automap import automap_base
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine, func
@@ -20,8 +18,8 @@ Base = automap_base()
 Base.prepare(autoload_with=engine)
 
 # Save references to each table
-Measurement = Base.classes.measurement
-Stations = Base.classes.stations
+M = Base.classes.measurement
+Stations = Base.classes.station
 
 # Create our session (link) from Python to the DB
 session = Session(engine)
@@ -58,21 +56,21 @@ def welcome():
 def precipitaion():
 
     # finding one year before the last date of the dataset
-    last_row = session.query(Measurement.date).order_by(Measurement.date.desc()).first()
+    last_row = session.query(M.date).order_by(M.date.desc()).first()
     last_date = dt.datetime.strptime(last_row[0], "%Y-%m-%d")
     date_difference = last_date - dt.timedelta(days=365)
 
     # retrieving the precipitation amounts
-    precipitation_query = session.query(Measurement.date, Measurement.prcp).\
-        filter(Measurement.date >= date_difference).\
-        order_by(Measurement.date.desc()).all()
+    precipitation_query = session.query(M.date, M.prcp).\
+        filter(M.date >= date_difference).\
+        order_by(M.date.desc()).all()
 
     p_dict = {}
     query_to_dict(precipitation_query, p_dict)
     return jsonify(p_dict)
 
 @app.route("/api/v1.0/stations")
-def precipitaion():
+def stations():
 
     # retrieiving the stations
     station_query = session.query(Stations.station, Stations.name)
@@ -84,61 +82,81 @@ def precipitaion():
 def tobs():
 
     # finding one year before the last date for the station
-    station_last_row = session.query(Measurement.date).\
-                               filter(Measurement.station == 'USC00519281').\
-                               order_by(Measurement.date.desc()).first()
-    station_last_date = dt.datetime.strptime(station_last_row[0], "%Y-%m-%d")
-    station_date_difference = station_last_date - dt.timedelta(days=365)
+    stat_last_r = session.query(
+        M.date
+        ).filter(
+            M.station == 'USC00519281'
+            ).order_by(
+                M.date.desc()).first()
+    
+    stat_last_d = dt.datetime.strptime(stat_last_r[0], "%Y-%m-%d")
+    stat_d_dif = stat_last_d - dt.timedelta(days=365)
 
     # retrieving the temperatures
-    tobs_query = session.query(Measurement.station, Measurement.tobs).\
-                        filter((Measurement.station == 'USC00519281') and \
-                              (Measurement.date >= station_date_difference)).\
-                      order_by(Measurement.date.desc())
+    tobs_query = session.query(M.station, M.tobs).\
+                        filter((M.station == 'USC00519281') and \
+                              (M.date >= stat_d_dif)).\
+                      order_by(M.date.desc())
 
     tobs_dict = {}
     query_to_dict(tobs_query, tobs_dict)
     return jsonify(tobs_dict)
 
 @app.route("/api/v1.0/<start>")
-def start():
+def start(start):
 
     # retrieving the temperature aggregates
-    start_query = session.query(Measurement.date,
-                                Measurement.station, 
-                                sqlalchemy.func.min(Measurement.tobs), \
-                                sqlalchemy.func.max(Measurement.tobs),  \
-                                sqlalchemy.func.avg(Measurement.tobs),).\
-                          filter(Measurement.date >= start)
+    query = session.query(
+        func.min(M.date),
+        func.count(M.station), 
+        func.min(M.tobs),
+        func.max(M.tobs),
+        func.avg(M.tobs)
+        ).filter(M.date >= start)
 
-    start_dict = {}
-    i = 1
-    for row in start_query:
-        dict[i] = [row[0], row[1], row[2], row[3], row[4]]
-        i += 1
+    # start_dict = {'minmaxavg':[x for x in start_query[0]]}
+    s = query[0]
 
-    return jsonify(start_dict)
+    response = {
+        'response':{
+            'start date':s[0],
+            'stations':s[1],
+            'min':s[2],
+            'max':s[3],
+            'avg':s[4]
+    }}
+
+    return jsonify(response)
 
 @app.route("/api/v1.0/<start>/<end>")
-def end():
+def end(start, end):
 
     # retrieving the temperature aggregates
-    end_query = session.query(Measurement.date,
-                              Measurement.station, 
-                              sqlalchemy.func.min(Measurement.tobs), \
-                              sqlalchemy.func.max(Measurement.tobs),  \
-                              sqlalchemy.func.avg(Measurement.tobs),).\
-                        filter((Measurement.date >= start) and \
-                              (Measurement.date <= end))
+    query = session.query(
+        func.min(M.date),
+        func.max(M.date),
+        func.count(M.station), 
+        func.min(M.tobs),
+        func.max(M.tobs),
+        func.avg(M.tobs)
+    ).filter(M.date >= start, M.date <= end) # query filters are separated by a comma
+    # https://docs.sqlalchemy.org/en/14/orm/query.html#sqlalchemy.orm.Query.filter
 
-    end_dict = {}
+    # response = {'minmaxavg':[x for x in query[0]]}
 
-    i = 1
-    for row in end_query:
-        dict[i] = [row[0], row[1], row[2], row[3], row[4]]
-        i += 1
+    s = query[0]
 
-    return jsonify(end_dict)
+    response = {
+        'response':{
+            'start date':s[0],
+            'end date':s[1],
+            'stations':s[2],
+            'min':s[3],
+            'max':s[4],
+            'avg':s[5]
+    }}
+
+    return jsonify(response)
 
 if __name__ == '__main__':
     app.run(debug=True)
